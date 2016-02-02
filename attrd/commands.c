@@ -143,7 +143,7 @@ build_attribute_xml(
 
     return xml;
 }
-
+/* 属性のattributesハッシュテーブルへの生成処理 */
 static attribute_t *
 create_attribute(xmlNode *xml)
 {
@@ -541,9 +541,11 @@ attrd_peer_message(crm_node_t *peer, xmlNode *xml)
 
     if (safe_str_eq(op, ATTRD_OP_UPDATE)) {
 		/* IPCクライアント(attrd_updeterなど）更新メッセージの場合 */
+		/* 自ノードのattributesハッシュテーブルを更新する */
         attrd_peer_update(peer, xml, host, FALSE);
 
     } else if (safe_str_eq(op, ATTRD_OP_SYNC)) {
+		/* attrd間の属性同期処理 */
         attrd_peer_sync(peer, xml);
 
     } else if (safe_str_eq(op, ATTRD_OP_PEER_REMOVE)) {
@@ -561,16 +563,18 @@ attrd_peer_message(crm_node_t *peer, xmlNode *xml)
 
     } else if (safe_str_eq(op, ATTRD_OP_SYNC_RESPONSE)
               && safe_str_neq(peer->uname, attrd_cluster->uname)) {
+		/* 他ノードからの属性同期メッセージを受信した場合 */
         xmlNode *child = NULL;
 
         crm_notice("Processing %s from %s", op, peer->uname);
         for (child = __xml_first_child(xml); child != NULL; child = __xml_next(child)) {
             host = crm_element_value(child, F_ATTRD_HOST);
+            /* attrd間属性更新処理 - 受信した属性同期メッセージで自ノードのattributesハッシュテーブルを更新する */
             attrd_peer_update(peer, child, host, TRUE);
         }
     }
 }
-
+/* attrd間の属性同期処理 */
 void
 attrd_peer_sync(crm_node_t *peer, xmlNode *xml)
 {
@@ -580,20 +584,22 @@ attrd_peer_sync(crm_node_t *peer, xmlNode *xml)
     attribute_t *a = NULL;
     attribute_value_t *v = NULL;
     xmlNode *sync = create_xml_node(NULL, __FUNCTION__);
-
+	/* ATTRD_OP_SYNC_RESPONSEメッセージをセット */
     crm_xml_add(sync, F_ATTRD_TASK, ATTRD_OP_SYNC_RESPONSE);
-
+	/* 自ノードのattrdのattributesハッシュテーブルを処理する */
     g_hash_table_iter_init(&aIter, attributes);
     while (g_hash_table_iter_next(&aIter, NULL, (gpointer *) & a)) {
         g_hash_table_iter_init(&vIter, a->values);
         while (g_hash_table_iter_next(&vIter, NULL, (gpointer *) & v)) {
             crm_debug("Syncing %s[%s] = %s to %s", a->id, v->nodename, v->current, peer?peer->uname:"everyone");
+            /* ATTRD_OP_SYNC_RESPONSEメッセージに自ノードのattrdのattributesハッシュテーブルのデータをセットする */
             build_attribute_xml(sync, a->id, a->set, a->uuid, a->timeout_ms, a->user, a->is_private,
                                 v->nodename, v->nodeid, v->current);
         }
     }
 
     crm_debug("Syncing values to %s", peer?peer->uname:"everyone");
+   	/*属性の同期メッセージをattrd間で送信する */
     send_attrd_message(peer, sync);
     free_xml(sync);
 }
@@ -782,6 +788,7 @@ attrd_election_cb(gpointer user_data)
     peer_writer = strdup(attrd_cluster->uname);
 
     /* Update the peers after an election */
+    /* attrd間の属性同期処理 */
     attrd_peer_sync(NULL, NULL);
 
     /* Update the CIB after an election */
@@ -800,6 +807,7 @@ attrd_peer_change_cb(enum crm_status_type kind, crm_node_t *peer, const void *da
              */
             if ((election_state(writer) == election_won)
                 && !is_set(peer->flags, crm_remote_node)) {
+				/* attrd間の属性同期処理 */
                 attrd_peer_sync(peer, NULL);
             }
         } else {
