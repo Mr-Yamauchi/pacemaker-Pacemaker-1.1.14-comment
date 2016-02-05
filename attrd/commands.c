@@ -546,9 +546,11 @@ attrd_peer_message(crm_node_t *peer, xmlNode *xml)
 
     } else if (safe_str_eq(op, ATTRD_OP_SYNC)) {
 		/* attrd間の属性同期処理 */
+		/* 現状、ATTRD_OP_SYNCメッセージは利用されていない模様 */
         attrd_peer_sync(peer, xml);
 
     } else if (safe_str_eq(op, ATTRD_OP_PEER_REMOVE)) {
+        /* 属性削除処理 */
         int host_id = 0;
         char *endptr = NULL;
 
@@ -603,7 +605,7 @@ attrd_peer_sync(crm_node_t *peer, xmlNode *xml)
     send_attrd_message(peer, sync);
     free_xml(sync);
 }
-
+/* 属性削除処理 */
 void
 attrd_peer_remove(uint32_t nodeid, const char *host, gboolean uncache, const char *source)
 {
