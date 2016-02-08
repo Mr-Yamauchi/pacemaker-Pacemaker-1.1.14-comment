@@ -123,7 +123,7 @@ free_attribute(gpointer data)
         free(a);
     }
 }
-
+/* attrdのattributesハッシュテーブルのデータをXML化する */
 static xmlNode *
 build_attribute_xml(
     xmlNode *parent, const char *name, const char *set, const char *uuid, unsigned int timeout_ms, const char *user,
@@ -640,12 +640,14 @@ attrd_peer_remove(uint32_t nodeid, const char *host, gboolean uncache, const cha
  *
  * \return Pointer to new or existing hash table entry
  */
+/* 対象ホストの属性を検索 */
 static attribute_value_t *
 attrd_lookup_or_create_value(GHashTable *values, const char *host, xmlNode *xml)
 {
     attribute_value_t *v = g_hash_table_lookup(values, host);
 
     if (v == NULL) {
+		/* 属性が存在しない場合は、新規に作成する */
         v = calloc(1, sizeof(attribute_value_t));
         CRM_ASSERT(v != NULL);
 
@@ -659,7 +661,7 @@ attrd_lookup_or_create_value(GHashTable *values, const char *host, xmlNode *xml)
 
         g_hash_table_replace(values, v->nodename, v);
     }
-    return(v);
+    return(v);	/* 新規作成、もしくは、検索した属性を返す */
 }
 /* attrd間属性更新処理 */
 void
@@ -690,27 +692,29 @@ attrd_peer_update(crm_node_t *peer, xmlNode *xml, const char *host, bool filter)
         }
         return;
     }
-
+	/* 対象ホストの属性を検索する */
     v = attrd_lookup_or_create_value(a->values, host, xml);
 
     if(filter
               && safe_str_neq(v->current, value)
               && safe_str_eq(host, attrd_cluster->uname)) {
+		/* filter引数がtrueで、値が変更されて、異なるホストからの値の場合 */
         xmlNode *sync = create_xml_node(NULL, __FUNCTION__);
         crm_notice("%s[%s]: local value '%s' takes priority over '%s' from %s",
                    a->id, host, v->current, value, peer->uname);
-
+        /* ATTRD_OP_SYNC_RESPONSEメッセージに自ノードのattrdのattributesハッシュテーブルのデータをセットする */
         crm_xml_add(sync, F_ATTRD_TASK, ATTRD_OP_SYNC_RESPONSE);
         v = g_hash_table_lookup(a->values, host);
         build_attribute_xml(sync, a->id, a->set, a->uuid, a->timeout_ms, a->user, a->is_private,
                             v->nodename, v->nodeid, v->current);
 
         crm_xml_add_int(sync, F_ATTRD_WRITER, election_state(writer));
+        /*属性の同期メッセージをattrd間で送信する */
         send_attrd_message(peer, sync);
         free_xml(sync);
 
     } else if(safe_str_neq(v->current, value)) {
-        /* 属性値を更新する */
+        /* 値が異なる場合は、属性値を更新する */
         /* 属性の更新はELECTIONがelection_won(OWNER)でないノード内でも実施されるので注意が必要 */
         crm_info("Setting %s[%s]: %s -> %s from %s", attr, host, v->current, value, peer->uname);
         free(v->current);
@@ -719,12 +723,13 @@ attrd_peer_update(crm_node_t *peer, xmlNode *xml, const char *host, bool filter)
         } else {
             v->current = NULL;
         }
+        /* 変更フラグをセットする */
         changed = TRUE;
 
     } else {
         crm_trace("Unchanged %s[%s] from %s is %s", attr, host, peer->uname, value);
     }
-
+	/* 属性の変更フラグをセットする */
     a->changed |= changed;
 
     if(changed) {
@@ -824,7 +829,7 @@ attrd_peer_change_cb(enum crm_status_type kind, crm_node_t *peer, const void *da
         }
     }
 }
-
+/* 属性更新のCIBコールバック */
 static void
 attrd_cib_callback(xmlNode * msg, int call_id, int rc, xmlNode * output, void *user_data)
 {
@@ -834,6 +839,7 @@ attrd_cib_callback(xmlNode * msg, int call_id, int rc, xmlNode * output, void *u
     attribute_value_t *v = NULL;
 
     char *name = user_data;
+    /* 更新結果から属性を取得する */
     attribute_t *a = g_hash_table_lookup(attributes, name);
 
     if(a == NULL) {
@@ -867,11 +873,14 @@ attrd_cib_callback(xmlNode * msg, int call_id, int rc, xmlNode * output, void *u
         do_crm_log(level, "Update %d for %s[%s]=%s: %s (%d)", call_id, a->id, peer, v->requested, pcmk_strerror(rc), rc);
 
         if(rc == pcmk_ok) {
+			/* 更新成功の場合は、属性の格納値(stored)に要求値(requested)をセットする */
             free(v->stored);
             v->stored = v->requested;
+            /* 要求値(requested)をクリアする */
             v->requested = NULL;
 
         } else {
+			/* 更新失敗した場合は、要求値(requested)をクリアして変更フラグをセットする */
             free(v->requested);
             v->requested = NULL;
             a->changed = TRUE; /* Attempt write out again */
@@ -903,7 +912,7 @@ write_attributes(bool all, bool peer_discovered)
         }
     }
 }
-
+/* CIB更新用のXMLデータを生成する */
 static void
 build_update_element(xmlNode *parent, attribute_t *a, const char *nodeid, const char *value)
 {
@@ -1020,6 +1029,7 @@ write_attribute(attribute_t *a)
 
         /* If this is a private attribute, no update needs to be sent */
         if (a->is_private) {
+            /* プライベート属性は処理しない */
             private_updates++;
             continue;
         }
@@ -1035,12 +1045,16 @@ write_attribute(attribute_t *a)
         /* Add this value to status update XML */
         crm_debug("Update: %s[%s]=%s (%s %u %u %s)", v->nodename, a->id,
                   v->current, peer->uuid, peer->id, v->nodeid, peer->uname);
+        /* CIB更新用のXMLデータを生成する */
         build_update_element(xml_top, a, peer->uuid, v->current);
+        /* 更新データ数をカウントアップする */
         cib_updates++;
 
         free(v->requested);
+        /* 要求値(requested)をクリアする */
         v->requested = NULL;
         if (v->current) {
+			/* 現在の値を、要求値(requested)にセットする */
             v->requested = strdup(v->current);
         } else {
             /* Older attrd versions don't know about the cib_mixed_update
@@ -1055,15 +1069,15 @@ write_attribute(attribute_t *a)
                  private_updates, ((private_updates == 1)? "" : "s"),
                  a->id, (a->uuid? a->uuid : "<n/a>"), a->set);
     }
-    if (cib_updates) {
+    if (cib_updates) {	/* 更新データがある場合 */
         crm_log_xml_trace(xml_top, __FUNCTION__);
-
+		/* CIBを更新する */
         a->update = cib_internal_op(the_cib, CIB_OP_MODIFY, NULL, XML_CIB_TAG_STATUS, xml_top, NULL,
                                     flags, a->user);
 
         crm_info("Sent update %d with %d changes for %s, id=%s, set=%s",
                  a->update, cib_updates, a->id, (a->uuid? a->uuid : "<n/a>"), a->set);
-
+		/* 属性更新完了のCIBの更新コールバックをセットする */
         the_cib->cmds->register_callback_full(the_cib, a->update, 120, FALSE,
                                               strdup(a->id),
                                               "attrd_cib_callback",
