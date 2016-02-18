@@ -681,13 +681,17 @@ attrd_peer_update(crm_node_t *peer, xmlNode *xml, const char *host, bool filter)
     }
 
     if(host == NULL) {
+		/* ホスト名が設定されていない場合(Non Atomic Versionなのか？) */
         GHashTableIter vIter;
+        /* 属性のハッシュテーブルをiterセット */
         g_hash_table_iter_init(&vIter, a->values);
 
         crm_debug("Setting %s for all hosts to %s", attr, value);
-
+		/* メッセージからF_ATTRD_HOST_IDを削除 */
         xml_remove_prop(xml, F_ATTRD_HOST_ID);
+        /* 全ての属性のハッシュテーブルのホスト名を処理する */
         while (g_hash_table_iter_next(&vIter, (gpointer *) & host, NULL)) {
+			/* 属性のホスト名でattrd_peer_update()を実行する */
             attrd_peer_update(peer, xml, host, filter);
         }
         return;
@@ -750,10 +754,12 @@ attrd_peer_update(crm_node_t *peer, xmlNode *xml, const char *host, bool filter)
 
     /* this only involves cluster nodes. */
     if(v->nodeid == 0 && (v->is_remote == FALSE)) {
+		/* 対象ホストの属性のnodeidが0でremoteデータでない場合(多分、先のhost名が設定されていない場合のiterでの属性更新があたるのでは?)*/
         if(crm_element_value_int(xml, F_ATTRD_HOST_ID, (int*)&v->nodeid) == 0) {
             /* Create the name/id association */
             crm_node_t *peer = crm_get_peer(v->nodeid, host);
             crm_trace("We know %s's node id now: %s", peer->uname, peer->uuid);
+            /* 自ノードがelection_won(OWNER)の場合は、属性を更新する */
             if(election_state(writer) == election_won) {
                 write_attributes(FALSE, TRUE);
                 return;
