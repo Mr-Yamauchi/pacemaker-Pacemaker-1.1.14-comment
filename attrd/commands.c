@@ -751,11 +751,19 @@ attrd_peer_update(crm_node_t *peer, xmlNode *xml, const char *host, bool filter)
             write_or_elect_attribute(a);
         }
     }
-
+	/* v->nodeidは、書き込みが行われるまでは、0 */
+	/* 自ノードがelection_won(OWNER)の場合は、write_attribute()でセットされる */
+	/* 他ノード(OWNER以外)のノードでは、そのノードがelection_won(OWNER)になるまで設定されていない */
+	/* 以下の処理は、
+	   属性がタイマー書き込み(dampen)の場合で、まだ、上記mainloop_timer_start()にてタイマー発動のみで書き込まれていない時に
+	   全ノード対象の更新((多分、先のhost名が設定されていない場合のiterでの全ホストの属性更新があたる)が来た場合に、
+	   タイマー発動を待たずに自ノードがelection_won(OWNER)の場合は、属性を書き込む仕組みとなっている。
+	*/
     /* this only involves cluster nodes. */
     if(v->nodeid == 0 && (v->is_remote == FALSE)) {
-		/* 対象ホストの属性のnodeidが0でremoteデータでない場合(多分、先のhost名が設定されていない場合のiterでの属性更新があたるのでは?)*/
+		/* 対象ホストの属性のnodeidが0(未書き込み)でremoteデータでない場合 */
         if(crm_element_value_int(xml, F_ATTRD_HOST_ID, (int*)&v->nodeid) == 0) {
+			/* 先のhost名が設定されていない場合のiterでの全ホストの属性更新があたる */
             /* Create the name/id association */
             crm_node_t *peer = crm_get_peer(v->nodeid, host);
             crm_trace("We know %s's node id now: %s", peer->uname, peer->uuid);
@@ -1029,6 +1037,8 @@ write_attribute(attribute_t *a)
 
         /* If we're just learning the peer's node id, remember it */
         if (peer->id && (v->nodeid == 0)) {
+			/* 書き込み時にのみv->nodeidをセットする */
+			/* 書き込みを行わないノードではv->nodeidは0のまままので注意 */
             crm_trace("Updating value's nodeid");
             v->nodeid = peer->id;
         }
