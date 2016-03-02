@@ -681,7 +681,7 @@ attrd_peer_update(crm_node_t *peer, xmlNode *xml, const char *host, bool filter)
     }
 
     if(host == NULL) {
-		/* ホスト名が設定されていない場合(Non Atomic Versionなのか？) */
+		/* ホスト名が設定されていない場合(全ホストが対象の属性更新) */
         GHashTableIter vIter;
         /* 属性のハッシュテーブルをiterセット */
         g_hash_table_iter_init(&vIter, a->values);
@@ -691,7 +691,7 @@ attrd_peer_update(crm_node_t *peer, xmlNode *xml, const char *host, bool filter)
         xml_remove_prop(xml, F_ATTRD_HOST_ID);
         /* 全ての属性のハッシュテーブルのホスト名を処理する */
         while (g_hash_table_iter_next(&vIter, (gpointer *) & host, NULL)) {
-			/* 属性のホスト名でattrd_peer_update()を実行する */
+			/* 属性のハッシュテーブルのホスト名でattrd_peer_update()を実行する */
             attrd_peer_update(peer, xml, host, filter);
         }
         return;
